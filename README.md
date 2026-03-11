@@ -8,6 +8,33 @@
 - График их зависимости: абсцисса – частота по Фурье, ордината – частота по SSA,
 линейный тренд – биссектриса первой координатной четверти
 
+## Запуск
+
+1. Поместить файлы датасета в директорию `signals/`.
+   По умолчанию программа настроена на PPG-датасет
+   `signals/Data . Code/**/*.csv`.
+   Источник датасета:
+   [PPG Heart Rate Estimation Dataset](https://borealisdata.ca/dataset.xhtml?persistentId=doi%3A10.5683%2FSP3%2FWVFKUM).
+2. Установить зависимости:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+3. Запустить анализ:
+
+```bash
+python3 main.py
+```
+
+Для других датасетов при необходимости измените `INPUT_DIR` и `FILE_PATTERN` в `main.py`.
+По умолчанию обрабатываются все найденные CSV-файлы.
+Используется колонка `PPG1` (`SIGNAL_COLUMN = 1`).
+Для анализа по умолчанию установлено окно `SSA_WINDOW = 256`.
+
+
 
 ## 1. Преобразование Фурье
 
@@ -184,8 +211,5 @@ f_{SSA} = f_{Fourier}
 
 ```
 numpy
-scipy
 matplotlib
-pyts (опционально)
-pandas
 ```
