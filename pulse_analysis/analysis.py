@@ -1,6 +1,17 @@
 from pathlib import Path
 
 import numpy as np
+from scipy.signal import butter, sosfiltfilt
+
+# Препроцессинг PPG1
+TIME_START = 10.0
+TIME_END = 110.0
+FC_HIGH = 0.5
+FC_LOW = 5.0
+MIN_FREQUENCY = FC_HIGH
+MAX_FREQUENCY = FC_LOW
+DEFAULT_SIGNAL_COLUMN = 1
+SSA_COMPONENTS = 4
 
 
 def _validate_signal(signal: np.ndarray, sampling_frequency: float) -> None:
@@ -16,12 +27,21 @@ def _validate_signal(signal: np.ndarray, sampling_frequency: float) -> None:
         raise ValueError("Сигнал вырожден: все отсчеты одинаковы.")
 
 
+def _preprocess_ppg(signal: np.ndarray, sampling_frequency: float) -> np.ndarray:
+    """Инверсия PPG1 и полосовой фильтр 0.5–5 Гц."""
+
+    inverted = -signal
+    nyquist = 0.5 * sampling_frequency
+    sos = butter(N=2, Wn=[FC_HIGH / nyquist, FC_LOW / nyquist], btype="band", output="sos")
+    return sosfiltfilt(sos, inverted)
+
+
 def read_signal(
     path: Path,
     signal_length: int | None = None,
-    signal_column: int = 1,
+    signal_column: int = DEFAULT_SIGNAL_COLUMN,
 ) -> tuple[np.ndarray, float]:
-    """Читает PPG-сигнал из CSV и оценивает частоту дискретизации по времени."""
+    """Читает PPG1 из CSV, обрезает по времени и препроцессирует сигнал."""
 
     try:
         data = np.loadtxt(path, delimiter=",")
@@ -33,6 +53,10 @@ def read_signal(
 
     time = np.asarray(data[:, 0], dtype=float)
     signal = np.asarray(data[:, signal_column], dtype=float)
+    mask = (time >= TIME_START) & (time <= TIME_END)
+    time = time[mask]
+    signal = signal[mask]
+
     if signal_length is not None:
         time = time[:signal_length]
         signal = signal[:signal_length]
@@ -45,6 +69,7 @@ def read_signal(
         raise ValueError(f"Некорректная временная шкала в файле {path}.")
 
     sampling_frequency = 1.0 / median_step
+    signal = _preprocess_ppg(signal, sampling_frequency)
     _validate_signal(signal, sampling_frequency)
     return signal, sampling_frequency
 
@@ -52,7 +77,8 @@ def read_signal(
 def dominant_frequency_with_magnitude(
     signal: np.ndarray,
     sampling_frequency: float,
-    min_frequency: float = 0.1,
+    min_frequency: float = MIN_FREQUENCY,
+    max_frequency: float = MAX_FREQUENCY,
 ) -> tuple[float, float]:
     """Возвращает частоту и амплитуду максимального пика в спектре сигнала."""
 
@@ -61,19 +87,17 @@ def dominant_frequency_with_magnitude(
     spectrum = np.fft.rfft(centered_signal)
     frequencies = np.fft.rfftfreq(centered_signal.size, d=1.0 / sampling_frequency)
     magnitudes = np.abs(spectrum)
+
     start_index = int(np.searchsorted(frequencies, min_frequency))
-    if start_index >= magnitudes.size:
+    end_index = int(np.searchsorted(frequencies, max_frequency, side="right"))
+    if start_index >= end_index:
         raise ValueError(
-            f"Минимальная частота {min_frequency} Гц выше диапазона спектра сигнала."
+            f"Диапазон частот [{min_frequency}, {max_frequency}] Гц вне спектра сигнала."
         )
-    peak_index = start_index + int(np.argmax(magnitudes[start_index:]))
+
+    band = magnitudes[start_index:end_index]
+    peak_index = start_index + int(np.argmax(band))
     return float(frequencies[peak_index]), float(magnitudes[peak_index])
-
-
-def build_trajectory_matrix(signal: np.ndarray, window: int) -> np.ndarray:
-    """Формирует траекторную матрицу для SSA."""
-
-    return np.lib.stride_tricks.sliding_window_view(signal, window).T
 
 
 def diagonal_averaging(matrix: np.ndarray) -> np.ndarray:
@@ -94,8 +118,8 @@ def dominant_ssa_frequency(
     signal: np.ndarray,
     sampling_frequency: float,
     window: int,
-    components_count: int = 4,
-    min_frequency: float = 0.1,
+    components_count: int = SSA_COMPONENTS,
+    min_frequency: float = MIN_FREQUENCY,
 ) -> float:
     """Ищет основную частоту среди первых компонент SSA."""
 
@@ -106,7 +130,7 @@ def dominant_ssa_frequency(
         )
 
     centered_signal = signal - np.mean(signal)
-    trajectory = build_trajectory_matrix(centered_signal, window)
+    trajectory = np.lib.stride_tricks.sliding_window_view(centered_signal, window).T
     left_vectors, singular_values, right_vectors_t = np.linalg.svd(
         trajectory,
         full_matrices=False,
@@ -139,14 +163,15 @@ def analyze_files(
     files: list[Path],
     signal_length: int | None = None,
     ssa_window: int = 256,
-    ssa_components: int = 4,
-    min_frequency: float = 0.1,
-    signal_column: int = 1,
-) -> tuple[list[float], list[float]]:
-    """Считывает список сигналов и возвращает частоты FFT и SSA."""
+    ssa_components: int = SSA_COMPONENTS,
+    min_frequency: float = MIN_FREQUENCY,
+    signal_column: int = DEFAULT_SIGNAL_COLUMN,
+) -> tuple[list[float], list[float], list[tuple[Path, np.ndarray, float]]]:
+    """Считывает сигналы и возвращает частоты FFT, SSA и данные для графиков."""
 
     fourier_frequencies: list[float] = []
     ssa_frequencies: list[float] = []
+    traces: list[tuple[Path, np.ndarray, float]] = []
     total_files = len(files)
 
     for index, path in enumerate(files, start=1):
@@ -172,5 +197,6 @@ def analyze_files(
 
         fourier_frequencies.append(fourier_frequency)
         ssa_frequencies.append(ssa_frequency)
+        traces.append((path, signal, file_sampling_frequency))
 
-    return fourier_frequencies, ssa_frequencies
+    return fourier_frequencies, ssa_frequencies, traces
