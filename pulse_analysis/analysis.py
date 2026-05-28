@@ -3,12 +3,12 @@ from pathlib import Path
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-# Препроцессинг PPG1
+# Препроцессинг ECG
 TIME_START = 10.0
 TIME_END = 110.0
 FC_HIGH = 0.5
 FC_LOW = 5.0
-DEFAULT_SIGNAL_COLUMN = 1
+DEFAULT_SIGNAL_COLUMN = 2
 SSA_COMPONENTS = 4
 
 
@@ -25,20 +25,19 @@ def _validate_signal(signal: np.ndarray, sampling_frequency: float) -> None:
         raise ValueError("Сигнал вырожден: все отсчеты одинаковы.")
 
 
-def _preprocess_ppg(signal: np.ndarray, sampling_frequency: float) -> np.ndarray:
-    """Инверсия PPG1 и полосовой фильтр 0.5–5 Гц."""
+def _preprocess_ecg(signal: np.ndarray, sampling_frequency: float) -> np.ndarray:
+    """Полосовой фильтр ECG в диапазоне 0.5–5 Гц."""
 
-    inverted = -signal
     nyquist = 0.5 * sampling_frequency
     sos = butter(N=2, Wn=[FC_HIGH / nyquist, FC_LOW / nyquist], btype="band", output="sos")
-    return sosfiltfilt(sos, inverted)
+    return sosfiltfilt(sos, signal)
 
 
 def read_signal(
     path: Path,
     signal_column: int = DEFAULT_SIGNAL_COLUMN,
 ) -> tuple[np.ndarray, float]:
-    """Читает PPG1 из CSV, обрезает по времени и препроцессирует сигнал."""
+    """Читает ECG из CSV, обрезает по времени и препроцессирует сигнал."""
 
     try:
         data = np.loadtxt(path, delimiter=",")
@@ -58,11 +57,9 @@ def read_signal(
         raise ValueError(f"Файл {path} содержит слишком мало временных отсчетов.")
     time_steps = np.diff(time)
     median_step = float(np.median(time_steps))
-    if median_step <= 0:
-        raise ValueError(f"Некорректная временная шкала в файле {path}.")
 
     sampling_frequency = 1.0 / median_step
-    signal = _preprocess_ppg(signal, sampling_frequency)
+    signal = _preprocess_ecg(signal, sampling_frequency)
     _validate_signal(signal, sampling_frequency)
     return signal, sampling_frequency
 
@@ -90,6 +87,7 @@ def dominant_frequency_with_magnitude(
 
     band = magnitudes[start_index:end_index]
     peak_index = start_index + int(np.argmax(band))
+
     return (
         float(frequencies[peak_index]),
         float(magnitudes[peak_index]),
@@ -162,12 +160,12 @@ def analyze_files(
     ssa_window: int = 256,
     ssa_components: int = SSA_COMPONENTS,
     signal_column: int = DEFAULT_SIGNAL_COLUMN,
-) -> tuple[list[float], list[float], list[tuple[Path, np.ndarray, float, np.ndarray, np.ndarray]]]:
-    """Считывает сигналы и возвращает частоты FFT, SSA и данные для графиков."""
+) -> tuple[list[float], list[float], list[tuple[Path, np.ndarray, np.ndarray]]]:
+    """Считывает сигналы и возвращает частоты FFT, SSA и данные для графика спектра."""
 
     fourier_frequencies: list[float] = []
     ssa_frequencies: list[float] = []
-    traces: list[tuple[Path, np.ndarray, float, np.ndarray, np.ndarray]] = []
+    traces: list[tuple[Path, np.ndarray, np.ndarray]] = []
     total_files = len(files)
 
     for index, path in enumerate(files, start=1):
@@ -191,7 +189,7 @@ def analyze_files(
 
         fourier_frequencies.append(fourier_frequency)
         ssa_frequencies.append(ssa_frequency)
-        traces.append((path, signal, file_sampling_frequency, frequencies, magnitudes))
+        traces.append((path, frequencies, magnitudes))
 
     return fourier_frequencies, ssa_frequencies, traces
 
