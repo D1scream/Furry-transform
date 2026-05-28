@@ -8,8 +8,6 @@ TIME_START = 10.0
 TIME_END = 110.0
 FC_HIGH = 0.5
 FC_LOW = 5.0
-MIN_FREQUENCY = FC_HIGH
-MAX_FREQUENCY = FC_LOW
 DEFAULT_SIGNAL_COLUMN = 1
 SSA_COMPONENTS = 4
 
@@ -38,7 +36,6 @@ def _preprocess_ppg(signal: np.ndarray, sampling_frequency: float) -> np.ndarray
 
 def read_signal(
     path: Path,
-    signal_length: int | None = None,
     signal_column: int = DEFAULT_SIGNAL_COLUMN,
 ) -> tuple[np.ndarray, float]:
     """Читает PPG1 из CSV, обрезает по времени и препроцессирует сигнал."""
@@ -57,10 +54,6 @@ def read_signal(
     time = time[mask]
     signal = signal[mask]
 
-    if signal_length is not None:
-        time = time[:signal_length]
-        signal = signal[:signal_length]
-
     if time.size < 2:
         raise ValueError(f"Файл {path} содержит слишком мало временных отсчетов.")
     time_steps = np.diff(time)
@@ -77,10 +70,10 @@ def read_signal(
 def dominant_frequency_with_magnitude(
     signal: np.ndarray,
     sampling_frequency: float,
-    min_frequency: float = MIN_FREQUENCY,
-    max_frequency: float = MAX_FREQUENCY,
-) -> tuple[float, float]:
-    """Возвращает частоту и амплитуду максимального пика в спектре сигнала."""
+    min_frequency: float = FC_HIGH,
+    max_frequency: float = FC_LOW,
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Возвращает частоту пика, амплитуду и спектр |FFT|."""
 
     _validate_signal(signal, sampling_frequency)
     centered_signal = signal - np.mean(signal)
@@ -97,7 +90,12 @@ def dominant_frequency_with_magnitude(
 
     band = magnitudes[start_index:end_index]
     peak_index = start_index + int(np.argmax(band))
-    return float(frequencies[peak_index]), float(magnitudes[peak_index])
+    return (
+        float(frequencies[peak_index]),
+        float(magnitudes[peak_index]),
+        frequencies,
+        magnitudes,
+    )
 
 
 def diagonal_averaging(matrix: np.ndarray) -> np.ndarray:
@@ -119,7 +117,7 @@ def dominant_ssa_frequency(
     sampling_frequency: float,
     window: int,
     components_count: int = SSA_COMPONENTS,
-    min_frequency: float = MIN_FREQUENCY,
+    min_frequency: float = FC_HIGH,
 ) -> float:
     """Ищет основную частоту среди первых компонент SSA."""
 
@@ -146,7 +144,7 @@ def dominant_ssa_frequency(
             right_vectors_t[index, :],
         )
         component = diagonal_averaging(elementary_matrix)
-        frequency, peak_magnitude = dominant_frequency_with_magnitude(
+        frequency, peak_magnitude, _, _ = dominant_frequency_with_magnitude(
             component,
             sampling_frequency,
             min_frequency,
@@ -161,35 +159,31 @@ def dominant_ssa_frequency(
 
 def analyze_files(
     files: list[Path],
-    signal_length: int | None = None,
     ssa_window: int = 256,
     ssa_components: int = SSA_COMPONENTS,
-    min_frequency: float = MIN_FREQUENCY,
     signal_column: int = DEFAULT_SIGNAL_COLUMN,
-) -> tuple[list[float], list[float], list[tuple[Path, np.ndarray, float]]]:
+) -> tuple[list[float], list[float], list[tuple[Path, np.ndarray, float, np.ndarray, np.ndarray]]]:
     """Считывает сигналы и возвращает частоты FFT, SSA и данные для графиков."""
 
     fourier_frequencies: list[float] = []
     ssa_frequencies: list[float] = []
-    traces: list[tuple[Path, np.ndarray, float]] = []
+    traces: list[tuple[Path, np.ndarray, float, np.ndarray, np.ndarray]] = []
     total_files = len(files)
 
     for index, path in enumerate(files, start=1):
         print(f"[{index}/{total_files}] Обработка {path}")
         try:
-            signal, file_sampling_frequency = read_signal(path, signal_length, signal_column)
+            signal, file_sampling_frequency = read_signal(path, signal_column)
             window = min(ssa_window, signal.size)
-            fourier_frequency, _ = dominant_frequency_with_magnitude(
+            fourier_frequency, _, frequencies, magnitudes = dominant_frequency_with_magnitude(
                 signal,
                 file_sampling_frequency,
-                min_frequency,
             )
             ssa_frequency = dominant_ssa_frequency(
                 signal,
                 file_sampling_frequency,
                 window,
                 ssa_components,
-                min_frequency,
             )
         except ValueError as error:
             print(f"Пропуск {path}: {error}")
@@ -197,6 +191,7 @@ def analyze_files(
 
         fourier_frequencies.append(fourier_frequency)
         ssa_frequencies.append(ssa_frequency)
-        traces.append((path, signal, file_sampling_frequency))
+        traces.append((path, signal, file_sampling_frequency, frequencies, magnitudes))
 
     return fourier_frequencies, ssa_frequencies, traces
+
