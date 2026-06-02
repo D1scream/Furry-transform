@@ -26,3 +26,9 @@ python .\fft_ssa_analysis.py
 ```powershell
 jupyter notebook signal_pipeline.ipynb
 ```
+
+Вейвлет-спектры (DWT):
+
+```powershell
+.\.venv\Scripts\python.exe .\wavelet_analysis.py
+```

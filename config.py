@@ -15,6 +15,9 @@ FILE_STRIDE = 10
 SPECTRUM_PLOTS = 4
 MAX_WORKERS = max(1, (os.cpu_count() or 2) // 2)
 
+WAVELET_OUTPUT_DIR = OUTPUT_DIR / "wavelet_spectra"
+WAVELETS = ("haar", "db4", "sym4", "coif1")
+
 def signal_files(stride: int = 1) -> list[Path]:
     return sorted(
         path

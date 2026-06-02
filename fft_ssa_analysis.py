@@ -4,7 +4,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from analysis import analyze_files
-from config import FC_LOW, FILE_STRIDE, OUTPUT_DIR, SSA_COMPONENTS, SSA_WINDOW, SPECTRUM_PLOTS, signal_files
+from config import FC_LOW, FILE_STRIDE, OUTPUT_DIR, SPECTRUM_PLOTS, signal_files
 
 
 
@@ -15,7 +15,7 @@ def main() -> None:
     if not files:
         raise FileNotFoundError("В директории не найдено файлов d####.")
 
-    results = analyze_files(files, ssa_window=SSA_WINDOW, ssa_components=SSA_COMPONENTS)
+    results = analyze_files(files)
     if not results:
         raise RuntimeError("Не удалось найти ни одного корректного сигнала для анализа.")
 

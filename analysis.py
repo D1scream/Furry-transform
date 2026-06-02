@@ -14,6 +14,7 @@ from config import (
     SAMPLING_FREQUENCY,
     SSA_CHUNKSIZE,
     SSA_COMPONENTS,
+    SSA_WINDOW,
 )
 
 def read_signal(path: Path) -> np.ndarray:
@@ -21,7 +22,7 @@ def read_signal(path: Path) -> np.ndarray:
     if signal.size < 2:
         raise ValueError("file too small")
 
-    nyquist = 0.5 * SAMPLING_FREQUENCY
+    nyquist = 0.5 * SAMPLING_FREQUENCY 
     sos = butter(
         N=2,
         Wn=[FC_HIGH / nyquist, FC_LOW / nyquist],
@@ -56,7 +57,7 @@ def _fit_sinusoid_frequency(signal: np.ndarray) -> tuple[float, float, float]:
     time_seconds = np.arange(signal.size, dtype=float) / SAMPLING_FREQUENCY
 
     smoothed_signal = gaussian_filter1d(signal, sigma=2)
-    min_peak_distance = int(0.4 * SAMPLING_FREQUENCY)
+    min_peak_distance = int(0.5 * SAMPLING_FREQUENCY)
     peaks, _ = find_peaks(smoothed_signal, distance=min_peak_distance)
 
     if len(peaks) >= 2:
@@ -97,16 +98,14 @@ def _fit_sinusoid_frequency(signal: np.ndarray) -> tuple[float, float, float]:
 
 
 def dominant_ssa_frequency(
-    signal: np.ndarray,
-    window_size: int,
-    components_count: int = SSA_COMPONENTS,
+    signal: np.ndarray
 ) -> float:
     if signal.size < 50:
         raise ValueError("signal too short for SSA")
 
     ssa = SingularSpectrumAnalysis(
-        window_size=window_size,
-        groups=[[i] for i in range(components_count)],
+        window_size=SSA_WINDOW,
+        groups=[[i] for i in range(SSA_COMPONENTS)],
         chunksize=SSA_CHUNKSIZE,
     )
     decomposition = ssa.fit_transform(signal.reshape(1, -1))
@@ -129,33 +128,23 @@ def dominant_ssa_frequency(
 
 def _analyze_one(
     path: Path,
-    ssa_window: int,
-    ssa_components: int,
 ) -> tuple[Path, dict | None, str | None]:
     try:
         signal = read_signal(path)
-        window = max(min(ssa_window, signal.size // 2), 20)
         fft_hz, freqs, mags = fft_spectrum(signal)
-        ssa_hz = dominant_ssa_frequency(
-            signal,
-            window_size=window,
-            components_count=ssa_components,
-        )
+        ssa_hz = dominant_ssa_frequency(signal)
         return path, {"fft_hz": fft_hz, "ssa_hz": ssa_hz, "freqs": freqs, "mags": mags}, None
     except Exception as e:
         return path, None, str(e)
 
 
 def analyze_files(
-    files: list[Path],
-    ssa_window: int = 256,
-    ssa_components: int = SSA_COMPONENTS,
-    max_workers: int = MAX_WORKERS,
+    files: list[Path]
 ) -> list[dict]:
     results = []
-    with ProcessPoolExecutor(max_workers=max(1, max_workers)) as pool:
+    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as pool:
         for i, (path, data, error) in enumerate(
-            pool.map(_analyze_one, files, [ssa_window] * len(files), [ssa_components] * len(files)),
+            pool.map(_analyze_one, files),
         ):
             if error:
                 print(f"[{i}/{len(files)}] {path.stem} — skip: {error}")
