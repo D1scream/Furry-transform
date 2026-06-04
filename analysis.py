@@ -46,9 +46,6 @@ def fft_spectrum(
     freqs = np.fft.rfftfreq(signal.size, d=1 / SAMPLING_FREQUENCY)
     mask = (freqs >= FC_HIGH) & (freqs <= FC_LOW)
 
-    if not np.any(mask):
-        raise ValueError("range error")
-
     peak = float(freqs[mask][np.argmax(mags[mask])])
     return peak, freqs, mags
 
@@ -151,7 +148,7 @@ def analyze_files(
                 continue
             print(
                 f"[{i}/{len(files)}] {path.stem} — "
-                f"{data['fft_hz'] * 60:.0f} / {data['ssa_hz'] * 60:.0f} BPM"
+                f"{data['fft_hz'] * 60:.2f} / {data['ssa_hz'] * 60:.2f} BPM"
             )
             results.append({"path": path, **data})
     return results

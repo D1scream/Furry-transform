@@ -6,9 +6,6 @@ import matplotlib.pyplot as plt
 from analysis import analyze_files
 from config import FC_LOW, FILE_STRIDE, OUTPUT_DIR, SPECTRUM_PLOTS, signal_files
 
-
-
-
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     files = signal_files(stride=FILE_STRIDE)
@@ -32,7 +29,7 @@ def main() -> None:
         axis.set_xlabel("Частота, BPM")
         axis.set_ylabel("|FFT|")
         axis.grid(True, alpha=0.3)
-    figure.suptitle("Спектр, первые 4 сигнала (красная — пик Фурье в BPM)", fontsize=14)
+    figure.suptitle("Спектр, первые 4 сигнала", fontsize=14)
     figure.tight_layout(rect=(0, 0, 1, 0.98))
     spectrum_path = OUTPUT_DIR / "fft_spectra_preview.png"
     figure.savefig(spectrum_path, dpi=150)
